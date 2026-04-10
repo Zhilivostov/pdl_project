@@ -40,7 +40,7 @@ class TcpServerWindow(QMainWindow):
         self.START_COMMAND = b'\x03\x00\x00\x00\x00\x00'
         self.WRITE_REGISTERS_COMMAND = b'\x00\x00\x00\x00\x00\x00' #пока только для 00 регистра
         self.READ_REGISTERS_COMMAND = b'\x04\x00\x00\x00\x00\x00' #пока только для 00 регистра
-        self.READ_DATA_COMMAND = b'\x0D\x00\x00\x00\x00\x00'
+        self.READ_DATA_COMMAND = b'\x0d\x00\x00\x00\x00\x00'
         # Порядок соответствия битов каналам АЦП (как в pages_conv.py).
         self.D = [12, 13, 14, 15, 8, 9, 10, 11, 4, 5, 6, 7, 0, 1, 2, 3]
         # 16 отдельных массивов для хранения результатов по каждому каналу.
@@ -70,8 +70,8 @@ class TcpServerWindow(QMainWindow):
 
         # Локальная конфигурация ПДА на стороне сервера
         # (загружается из configuration_of_prms.json через configurator.py).
-        self.conf = Current_conf()
-        self.conf.init_config()
+        ##self.conf = Current_conf()
+        ##self.conf.init_config()
 
         # Пошаговая инициализация UI, сети и главного цикла.
         self._init_ui()
@@ -113,6 +113,12 @@ class TcpServerWindow(QMainWindow):
         """
         timestamp = time.strftime("%H:%M:%S")
         self.log_widget.append(f"[{timestamp}] {message}")
+        
+        #update ui
+        app = QApplication.instance()
+        if app is not None:
+            app.processEvents()
+        
 
     def _init_server(self):
         """
@@ -148,7 +154,7 @@ class TcpServerWindow(QMainWindow):
         #self.timer.timeout.connect(self.main_loop_iteration)
         self.timer.timeout.connect(self.main_loop_iteration)
         #self.timer.start(50)  # период 50 мс (20 Гц)
-        self.timer.start(5000)
+        self.timer.start(15000)
         #self.log("Основной цикл сервера запущен (50 мс шаг)")
         self.log("Основной цикл сервера запущен (5000 мс шаг)")
         self.log("Конфигурация загружена на сервере и хранится в памяти")
@@ -358,24 +364,34 @@ class TcpServerWindow(QMainWindow):
         if data[-1:] == self.ACK_GOOD:
             #print("ACK received") #перенести это в логи
             self.log("Device ACK received")
-            self.print_raw_bytes(data)
+            self.log(data)
+            #self.print_raw_bytes(data)
         else:
             #print("NACK received") #перенести это в логи
             self.log("Device NACK received")
+            #self.print_raw_bytes(data)
+            self.log(data)
 
     def stop_work(self):
         self.my_socket.write(self.STOP_COMMAND)
+        self.log("Stop work command")
         data, address = self._recv_udp(4096) 
         self.check_ack(data)
         #print("Work stopped") #перенести это в логи
         self.log("Device work stopped")
 
     def write_registers_value(self):
-        for i in range(len(self.start_register_values)):
-            self.write_register(self.start_register_values[i])
+        #for i in range(len(self.start_register_values)):
+            #self.write_register(self.start_register_values[i]) #error with i
+            #self.write_register(self.write_register(b'\x00\x00\x00\x00\x00\x00'))
+            #self.write_register(self.write_register(b'\x00\x02\x00\x00\x00\x00'))
+            #self.write_register(self.write_register(b'\x00\x04\x00\x00\x00\x00'))
+        self.write_register(self.WRITE_REGISTERS_COMMAND)
+            
+
 
     def write_register(self, command = b'\x00\x00\x00\x00\x00\x00'):
-        self.my_socket.write(self.command) #нужен тут self или нет?
+        self.my_socket.write(self.WRITE_REGISTERS_COMMAND) #нужен тут self или нет?
         data, address = self._recv_udp(4096)
         self.check_ack(data)
         #print("Device register was written") #перенести это в логи
@@ -388,18 +404,21 @@ class TcpServerWindow(QMainWindow):
         
         data, address = self._recv_udp(4096)
         self.print_raw_bytes(data)
-        print("Register was read") #перенести это в логи
+        #print("Register was read") #перенести это в логи
+        self.log("Register was read")
 
     def start_work(self):
         self.my_socket.write(self.START_COMMAND)
         data, address = self._recv_udp(4096)
         self.check_ack(data)
-        print("Work started") #перенести это в логи
+        #print("Work started") #перенести это в логи
+        self.log("Work started")
         
         #пока ждём до конца(либо отправит правильный ответ конф, либо не отправит его вообще, поэтому проверка на соответствие не нужно, максимум таймер для исключения "несрабатывания")
         data, address = self._recv_udp(4096)
         self.print_raw_bytes(data)
-        print("Work ended") #перенести это в логи
+        #print("Work ended") #перенести это в логи
+        self.log("Work ended")
 
     def on_client_disconnected(self):
         """
@@ -477,7 +496,8 @@ class TcpServerWindow(QMainWindow):
 
     def device_loop_iteration(self):
         self.stop_work()
-        self.write_registers_value()
+        #self.write_registers_value()
+        self.write_register()
         #self.read_register()
         self.start_work()
         self.read_data()
@@ -523,4 +543,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
