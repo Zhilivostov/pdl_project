@@ -1,0 +1,3 @@
+test_data = b'\x00\x01\x02\xFF\xFE\xFD'
+
+self.
