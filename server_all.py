@@ -5,9 +5,9 @@ import json
 import struct
 import numpy as np
 
-from PyQt5.QtCore import QTimer
-from PyQt5.QtNetwork import QTcpServer, QTcpSocket, QHostAddress, QUdpSocket
-from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QVBoxLayout, QWidget, QTextEdit
+from PyQt6.QtCore import QTimer
+from PyQt6.QtNetwork import QTcpServer, QTcpSocket, QHostAddress, QUdpSocket
+from PyQt6.QtWidgets import QApplication, QMainWindow, QLabel, QVBoxLayout, QWidget, QTextEdit
 
 from configurator import Current_conf
 
@@ -40,7 +40,7 @@ class TcpServerWindow(QMainWindow):
         self.START_COMMAND = b'\x03\x00\x00\x00\x00\x00'
         self.WRITE_REGISTERS_COMMAND = b'\x00\x00\x00\x00\x00\x00' #пока только для 00 регистра
         self.READ_REGISTERS_COMMAND = b'\x04\x00\x00\x00\x00\x00' #пока только для 00 регистра
-        self.READ_DATA_COMMAND = b'\x0d\x00\x00\x00\x00\x00'
+        self.READ_DATA_COMMAND = b'\x0D\x00\x00\x00\x00\x00'
         # Порядок соответствия битов каналам АЦП (как в pages_conv.py).
         self.D = [12, 13, 14, 15, 8, 9, 10, 11, 4, 5, 6, 7, 0, 1, 2, 3]
         # 16 отдельных массивов для хранения результатов по каждому каналу.
@@ -70,8 +70,8 @@ class TcpServerWindow(QMainWindow):
 
         # Локальная конфигурация ПДА на стороне сервера
         # (загружается из configuration_of_prms.json через configurator.py).
-        ##self.conf = Current_conf()
-        ##self.conf.init_config()
+        self.conf = Current_conf()
+        self.conf.init_config()
 
         # Пошаговая инициализация UI, сети и главного цикла.
         self._init_ui()
@@ -113,12 +113,11 @@ class TcpServerWindow(QMainWindow):
         """
         timestamp = time.strftime("%H:%M:%S")
         self.log_widget.append(f"[{timestamp}] {message}")
-        
-        #update ui
+        # Во время блокирующих UDP-операций принудительно обновляем UI,
+        # чтобы лог сразу появлялся в окне приложения.
         app = QApplication.instance()
         if app is not None:
             app.processEvents()
-        
 
     def _init_server(self):
         """
@@ -154,7 +153,7 @@ class TcpServerWindow(QMainWindow):
         #self.timer.timeout.connect(self.main_loop_iteration)
         self.timer.timeout.connect(self.main_loop_iteration)
         #self.timer.start(50)  # период 50 мс (20 Гц)
-        self.timer.start(15000)
+        self.timer.start(5000)
         #self.log("Основной цикл сервера запущен (50 мс шаг)")
         self.log("Основной цикл сервера запущен (5000 мс шаг)")
         self.log("Конфигурация загружена на сервере и хранится в памяти")
@@ -242,19 +241,45 @@ class TcpServerWindow(QMainWindow):
                 "adc_processed_{}.txt".format(time.strftime("%Y%m%d_%H%M%S")),
             )
         try:
-            lengths = [len(self.adc_channels[ch]) for ch in range(16)]
-            if not lengths or max(lengths) == 0:
+            n = self._adc_rows_count()
+            if n <= 0:
                 self.log("Запись в файл: нет данных в adc_channels, файл не создан")
                 return filepath
-            n = min(lengths)
             with open(filepath, "w", encoding="utf-8", newline="") as f:
                 f.write(",".join("ch{}".format(i) for i in range(16)) + "\n")
-                for i in range(n):
-                    line = ",".join(str(int(self.adc_channels[ch][i])) for ch in range(16))
+                for line in self._iter_adc_rows(n):
                     f.write(line + "\n")
             self.log("Обработанные данные записаны в файл: {} ({} строк данных)".format(filepath, n))
         except OSError as e:
             self.log("Ошибка записи обработанных данных в файл: {}".format(e))
+        return filepath
+
+    def write_adc_channels_arrays_to_file(self, filepath=None):
+        """
+        Записывает полученные массивы int по всем каналам в JSON-файл.
+        Формат: {"ch0":[...], ..., "ch15":[...]}.
+        """
+        if filepath is None:
+            base = os.path.dirname(os.path.abspath(__file__)) or os.getcwd()
+            filepath = os.path.join(
+                base,
+                "adc_channels_arrays_{}.json".format(time.strftime("%Y%m%d_%H%M%S")),
+            )
+        try:
+            n = self._adc_rows_count()
+            if n <= 0:
+                self.log("Запись массивов каналов: нет данных в adc_channels, файл не создан")
+                return filepath
+
+            data = {
+                "ch{}".format(ch): [int(value) for value in self.adc_channels[ch]]
+                for ch in range(16)
+            }
+            with open(filepath, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            self.log("Массивы int по каналам записаны в файл: {}".format(filepath))
+        except OSError as e:
+            self.log("Ошибка записи массивов каналов в файл: {}".format(e))
         return filepath
 
     def broadcast_adc_channels_to_clients(self):
@@ -265,15 +290,11 @@ class TcpServerWindow(QMainWindow):
         if not self.clients:
             self.log("Нет подключенных клиентов, данные не отправляются")
             return
-        lengths = [len(self.adc_channels[ch]) for ch in range(16)]
-        if not lengths or max(lengths) == 0:
+        n = self._adc_rows_count()
+        if n <= 0:
             self.log("Нет данных в adc_channels, данные не отправляются")
             return
-        n = min(lengths)
-        lines = []
-        for i in range(n):
-            line = ",".join(str(int(self.adc_channels[ch][i])) for ch in range(16))
-            lines.append(line)
+        lines = list(self._iter_adc_rows(n))
         payload = ("\n".join(lines) + "\n").encode("utf-8")
         for sock in list(self.clients):
             if sock.state() == QTcpSocket.ConnectedState:
@@ -291,6 +312,20 @@ class TcpServerWindow(QMainWindow):
                             )
                         )
 
+    def _adc_rows_count(self):
+        """Возвращает число полностью готовых строк по всем 16 каналам."""
+        lengths = [len(self.adc_channels[ch]) for ch in range(16)]
+        if not lengths or max(lengths) == 0:
+            return 0
+        return min(lengths)
+
+    def _iter_adc_rows(self, rows_count=None):
+        """Генерирует строки вида 'ch0,...,ch15' для готовых отсчётов."""
+        if rows_count is None:
+            rows_count = self._adc_rows_count()
+        for i in range(rows_count):
+            yield ",".join(str(int(self.adc_channels[ch][i])) for ch in range(16))
+
     def receive_udp_data_to_buffer(self, packets_count=64, header_size=10, payload_size=1024):
         """
         Получает `packets_count` UDP-пакетов от прибора и накапливает полезные данные.
@@ -302,29 +337,52 @@ class TcpServerWindow(QMainWindow):
 
         После получения последнего пакета пишет лог об окончании приёма.
         """
-        #self.buffer_data = bytearray()
+        received_packets = 0
+        skipped_packets = 0
+        while received_packets < packets_count:
+            if not self.my_socket.hasPendingDatagrams():
+                # Ждём новые данные от прибора; выходим при таймауте.
+                if not self.my_socket.waitForReadyRead(2000):
+                    self.log(
+                        "Таймаут ожидания UDP данных: получено {} из {} пакетов".format(
+                            received_packets, packets_count
+                        )
+                    )
+                    break
 
-        for packet_idx in range(packets_count):
-            data, _ = self._recv_udp(header_size + payload_size)
-            if len(data) < header_size:
-                self.log(
-                    f"UDP пакет #{packet_idx + 1}: слишком короткий ({len(data)} байт), пакет пропущен"
-                )
-                continue
+            while self.my_socket.hasPendingDatagrams() and received_packets < packets_count:
+                datagram_size = self.my_socket.pendingDatagramSize()
+                data, _, _ = self.my_socket.readDatagram(datagram_size)
 
-            clean_data = data[header_size:]
-            if len(clean_data) != payload_size:
-                self.log(
-                    f"UDP пакет #{packet_idx + 1}: полезная нагрузка {len(clean_data)} байт вместо {payload_size}, пакет пропущен"
-                )
-                continue
+                if len(data) < header_size:
+                    skipped_packets += 1
+                    self.log(
+                        "UDP пакет #{}: слишком короткий ({} байт), пакет пропущен".format(
+                            received_packets + skipped_packets + 1, len(data)
+                        )
+                    )
+                    continue
 
-            self.buffer_data.extend(clean_data)
+                clean_data = data[header_size:]
+                if len(clean_data) != payload_size:
+                    skipped_packets += 1
+                    self.log(
+                        "UDP пакет #{}: полезная нагрузка {} байт вместо {}, пакет пропущен".format(
+                            received_packets + skipped_packets + 1,
+                            len(clean_data),
+                            payload_size,
+                        )
+                    )
+                    continue
+
+                self.buffer_data.extend(clean_data)
+                received_packets += 1
 
         self.log(
-            f"Получение данных от прибора завершено: {packets_count} пакетов, {len(self.buffer_data)} байт в buffer_data"
+            "Получение данных от прибора завершено: валидных пакетов {}/{}, пропущено {}, байт в buffer_data: {}".format(
+                received_packets, packets_count, skipped_packets, len(self.buffer_data)
+            )
         )
-        #return self.buffer_data
 
     def on_new_connection(self):
         """
@@ -364,34 +422,25 @@ class TcpServerWindow(QMainWindow):
         if data[-1:] == self.ACK_GOOD:
             #print("ACK received") #перенести это в логи
             self.log("Device ACK received")
-            self.log(data)
-            #self.print_raw_bytes(data)
+            self.print_raw_bytes(data)
         else:
             #print("NACK received") #перенести это в логи
             self.log("Device NACK received")
-            #self.print_raw_bytes(data)
-            self.log(data)
 
     def stop_work(self):
         self.my_socket.write(self.STOP_COMMAND)
-        self.log("Stop work command")
         data, address = self._recv_udp(4096) 
         self.check_ack(data)
         #print("Work stopped") #перенести это в логи
         self.log("Device work stopped")
 
     def write_registers_value(self):
-        #for i in range(len(self.start_register_values)):
-            #self.write_register(self.start_register_values[i]) #error with i
-            #self.write_register(self.write_register(b'\x00\x00\x00\x00\x00\x00'))
-            #self.write_register(self.write_register(b'\x00\x02\x00\x00\x00\x00'))
-            #self.write_register(self.write_register(b'\x00\x04\x00\x00\x00\x00'))
-        self.write_register(self.WRITE_REGISTERS_COMMAND)
-            
-
+        for register_name, register_command in self.start_register_values.items():
+            self.write_register(register_command)
+            self.log("Регистр {} записан".format(register_name))
 
     def write_register(self, command = b'\x00\x00\x00\x00\x00\x00'):
-        self.my_socket.write(self.WRITE_REGISTERS_COMMAND) #нужен тут self или нет?
+        self.my_socket.write(command)
         data, address = self._recv_udp(4096)
         self.check_ack(data)
         #print("Device register was written") #перенести это в логи
@@ -404,21 +453,18 @@ class TcpServerWindow(QMainWindow):
         
         data, address = self._recv_udp(4096)
         self.print_raw_bytes(data)
-        #print("Register was read") #перенести это в логи
-        self.log("Register was read")
+        print("Register was read") #перенести это в логи
 
     def start_work(self):
         self.my_socket.write(self.START_COMMAND)
         data, address = self._recv_udp(4096)
         self.check_ack(data)
-        #print("Work started") #перенести это в логи
-        self.log("Work started")
+        print("Work started") #перенести это в логи
         
         #пока ждём до конца(либо отправит правильный ответ конф, либо не отправит его вообще, поэтому проверка на соответствие не нужно, максимум таймер для исключения "несрабатывания")
         data, address = self._recv_udp(4096)
         self.print_raw_bytes(data)
-        #print("Work ended") #перенести это в логи
-        self.log("Work ended")
+        print("Work ended") #перенести это в логи
 
     def on_client_disconnected(self):
         """
@@ -496,8 +542,7 @@ class TcpServerWindow(QMainWindow):
 
     def device_loop_iteration(self):
         self.stop_work()
-        #self.write_registers_value()
-        self.write_register()
+        self.write_registers_value()
         #self.read_register()
         self.start_work()
         self.read_data()
@@ -508,15 +553,24 @@ class TcpServerWindow(QMainWindow):
         Читает данные от прибора по UDP и накапливает их в buffer_data.
         Обработка пакетов выполняется методом receive_udp_data_to_buffer().
         """
-        #сначала отправляем команду на чтение данных
+        self.request_data_from_device()
+        self.log("Этап collect: начинаем сбор UDP-пакетов в буфер")
+        self.buffer_data.clear()
+        self.receive_udp_data_to_buffer()
+        self.process_buffer_data()
+
+    def request_data_from_device(self):
+        """Отправляет команду чтения данных прибору и проверяет ACK."""
+        self.log("Этап request: отправляем команду чтения данных прибору")
         self.my_socket.write(self.READ_DATA_COMMAND)
         data, address = self._recv_udp(4096)
         self.check_ack(data)
-        #после этого ловим данные от прибора и накапливаем в buffer_data
-        self.buffer_data.clear()
-        self.receive_udp_data_to_buffer()
-        #после завершения чтения полностью разбираем накопленный buffer_data
+
+    def process_buffer_data(self):
+        """Разбирает буфер, сохраняет данные в файл и рассылает клиентам."""
+        self.log("Этап process: разбираем buffer_data и отправляем результат")
         self.receive_and_sort_udp_raw()
+        self.write_adc_channels_arrays_to_file()
         self.write_processed_adc_to_file()
         self.broadcast_adc_channels_to_clients()
 
@@ -538,8 +592,9 @@ def main():
     app = QApplication(sys.argv)
     win = TcpServerWindow()
     win.show()
-    sys.exit(app.exec_())
-
+    #sys.exit(app.exec_()) #не работает в 6 версии
+    sys.exit(app.exec())
 
 if __name__ == "__main__":
     main()
+
