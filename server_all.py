@@ -41,6 +41,7 @@ class TcpServerWindow(QMainWindow):
         self.WRITE_REGISTERS_COMMAND = b'\x00\x00\x00\x00\x00\x00' #пока только для 00 регистра
         self.READ_REGISTERS_COMMAND = b'\x04\x00\x00\x00\x00\x00' #пока только для 00 регистра
         self.READ_DATA_COMMAND = b'\x0D\x00\x00\x00\x00\x00'
+        self.READ_ALL_DATA_COMMAND = b'\x0D\x00\x00\x00\x00\x3F' #все страницы с 0 по 63(3F)
         # Порядок соответствия битов каналам АЦП (как в pages_conv.py).
         self.D = [12, 13, 14, 15, 8, 9, 10, 11, 4, 5, 6, 7, 0, 1, 2, 3]
         # 16 отдельных массивов для хранения результатов по каждому каналу.
@@ -153,7 +154,7 @@ class TcpServerWindow(QMainWindow):
         #self.timer.timeout.connect(self.main_loop_iteration)
         self.timer.timeout.connect(self.main_loop_iteration)
         #self.timer.start(50)  # период 50 мс (20 Гц)
-        self.timer.start(5000)
+        self.timer.start(15000)
         #self.log("Основной цикл сервера запущен (50 мс шаг)")
         self.log("Основной цикл сервера запущен (5000 мс шаг)")
         self.log("Конфигурация загружена на сервере и хранится в памяти")
@@ -562,7 +563,8 @@ class TcpServerWindow(QMainWindow):
     def request_data_from_device(self):
         """Отправляет команду чтения данных прибору и проверяет ACK."""
         self.log("Этап request: отправляем команду чтения данных прибору")
-        self.my_socket.write(self.READ_DATA_COMMAND)
+        #self.my_socket.write(self.READ_DATA_COMMAND)
+        self.my_socket.write(self.READ_ALL_DATA_COMMAND)
         data, address = self._recv_udp(4096)
         self.check_ack(data)
 
@@ -597,4 +599,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
