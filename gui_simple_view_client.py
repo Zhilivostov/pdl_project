@@ -8,8 +8,8 @@
 """
 import sys
 
-from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import (
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import (
                 QApplication,
                 QCheckBox,
                 QComboBox,
@@ -145,8 +145,8 @@ class SimpleViewClientWindow(QDialog):
         self.sigma = 0
 
         self.auto_lvl_CB = QCheckBox("Auto exposure")
-        self.auto_lvl = 1
-        self.auto_lvl_CB.setCheckState(self.auto_lvl)
+        self.auto_lvl = True
+        self.auto_lvl_CB.setChecked(self.auto_lvl)
         self.auto_lvl_CB.setTristate(False)
 
         # self.auto_lvl_CB.valueChanged.connect(lambda x: self.auto_lvl = x)
@@ -183,10 +183,10 @@ class SimpleViewClientWindow(QDialog):
         vl.addLayout(vl2)
 
         hl = QHBoxLayout()
-        ADC_numb_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        self.ADC_numb.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        hl.addWidget(ADC_numb_label, alignment=Qt.AlignTop | Qt.AlignLeft)
-        hl.addWidget(self.ADC_numb, alignment=Qt.AlignTop | Qt.AlignLeft)
+        ADC_numb_label.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.ADC_numb.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        hl.addWidget(ADC_numb_label, alignment=Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        hl.addWidget(self.ADC_numb, alignment=Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         vl.addLayout(hl)
 
         mainLayout.addLayout(vl, k, 11, 2, 1)
@@ -209,7 +209,7 @@ class SimpleViewClientWindow(QDialog):
         self.ADC = np.arange(0, 16)
 
     def set_auto_exp(self, val):
-        self.auto_lvl = val
+        self.auto_lvl = (val == int(Qt.CheckState.Checked))
         self.colorMap.setLevels(low = 0, high = 2**11)
 
     def data_received(self, data):

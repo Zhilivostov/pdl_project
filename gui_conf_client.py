@@ -5,8 +5,8 @@
 `Current_conf` и протокольным сервером.
 """
 
-from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtWidgets import (
+from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtWidgets import (
                 QApplication,
                 QCheckBox,
                 QComboBox,
