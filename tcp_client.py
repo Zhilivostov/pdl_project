@@ -14,6 +14,7 @@
 import sys
 import json
 import struct
+import time
 
 import numpy as np
 
@@ -53,7 +54,8 @@ class ClientWindow(QMainWindow):
         # simple_view ожидает 2D-массив, где каждая строка - "оборот",
         # а 16 столбцов - условные ADC-каналы.
         self._rows = []
-        self._max_rows = 500  # глубина буфера для графика
+        #self._max_rows = 500  # глубина буфера для графика
+        self._max_rows = 2729  # глубина буфера для графика
         # Буфер для приёма бинарных TCP-кадров (на случай частичных пакетов).
         self._read_buffer = b""
 
@@ -216,6 +218,7 @@ class ClientWindow(QMainWindow):
             payload = self._read_buffer[4:frame_len]
             self._read_buffer = self._read_buffer[frame_len:]
 
+            processing_started_at = time.perf_counter()
             matrix = self._decode_payload_to_matrix(payload)
             if matrix is None or matrix.size == 0:
                 continue
@@ -225,10 +228,17 @@ class ClientWindow(QMainWindow):
                 self._rows = self._rows[-self._max_rows:]
 
             data = np.array(self._rows, dtype=float)
+            processing_elapsed_ms = (time.perf_counter() - processing_started_at) * 1000
             self.last_value_label.setText(
                 f"Последнее значение (ch0): {data[-1, 0]:.5f}"
             )
+            render_started_at = time.perf_counter()
             self.simple_view.data_received(data)
+            render_elapsed_ms = (time.perf_counter() - render_started_at) * 1000
+            print(
+                f"[timing] processing={processing_elapsed_ms:.2f} ms, "
+                f"render={render_elapsed_ms:.2f} ms"
+            )
 
     def _decode_payload_to_matrix(self, payload):
         """Декодирует payload бинарного кадра в numpy-массив формы (rows, cols)."""
