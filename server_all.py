@@ -6,7 +6,7 @@ import struct
 import numpy as np
 
 from PyQt6.QtCore import QTimer
-from PyQt6.QtNetwork import QTcpServer, QTcpSocket, QHostAddress, QUdpSocket
+from PyQt6.QtNetwork import QTcpServer, QTcpSocket, QHostAddress, QUdpSocket, QAbstractSocket
 from PyQt6.QtWidgets import QApplication, QMainWindow, QLabel, QVBoxLayout, QWidget, QTextEdit
 
 from configurator import Current_conf
@@ -41,7 +41,7 @@ class TcpServerWindow(QMainWindow):
         self.START_COMMAND = b'\x03\x00\x00\x00\x00\x00'
         self.WRITE_REGISTERS_COMMAND = b'\x00\x00\x00\x00\x00\x00' #пока только для 00 регистра
         self.READ_REGISTERS_COMMAND = b'\x04\x00\x00\x00\x00\x00' #пока только для 00 регистра
-        self.READ_DATA_COMMAND = b'\x0D\x00\x00\x00\x00\x00'
+        self.READ_DATA_COMMAND = b'\x0D\x00\x00\x00\x00\x3F' #все страницы
         # Порядок соответствия битов каналам АЦП (как в pages_conv.py).
         self.D = [12, 13, 14, 15, 8, 9, 10, 11, 4, 5, 6, 7, 0, 1, 2, 3]
         # 16 отдельных массивов для хранения результатов по каждому каналу.
@@ -154,9 +154,9 @@ class TcpServerWindow(QMainWindow):
         #self.timer.timeout.connect(self.main_loop_iteration)
         self.timer.timeout.connect(self.main_loop_iteration)
         #self.timer.start(50)  # период 50 мс (20 Гц)
-        self.timer.start(2000)
+        self.timer.start(50)
         #self.log("Основной цикл сервера запущен (50 мс шаг)")
-        self.log("Основной цикл сервера запущен (5000 мс шаг)")
+        self.log("Основной цикл сервера запущен (2000 мс шаг)")
         self.log("Конфигурация загружена на сервере и хранится в памяти")
 
     def _recv_udp(self, bufsize): #это для ожидания ответа от прибора(потом возможно от этого можно будет избавиться)
@@ -308,7 +308,8 @@ class TcpServerWindow(QMainWindow):
             return
 
         for sock in list(self.clients):
-            if sock.state() == QTcpSocket.ConnectedState:
+            #if sock.state() == QTcpSocket.ConnectedState:
+            if sock.state() == QAbstractSocket.SocketState.ConnectedState:
                 try:
                     sock.write(frame)
                 except Exception:
@@ -611,8 +612,8 @@ class TcpServerWindow(QMainWindow):
         """Разбирает буфер, сохраняет данные в файл и рассылает клиентам."""
         self.log("Этап process: разбираем buffer_data и отправляем результат")
         self.receive_and_sort_udp_raw()
-        self.write_adc_channels_arrays_to_file()
-        self.write_processed_adc_to_file()
+        #self.write_adc_channels_arrays_to_file()
+        #self.write_processed_adc_to_file()
         self.broadcast_adc_channels_to_clients()
 
     def read_json_parameters(self): #пока только для чтения конфигурации из файла, добавить переформатирование для отправки прибору
@@ -638,4 +639,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
